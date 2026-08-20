@@ -1,0 +1,37 @@
+# render.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Deploy to Render:
+#   1. Create a new Web Service on render.com
+#   2. Connect this GitHub repo
+#   3. Render auto-detects render.yaml and uses these settings
+#   4. After first deploy, copy the service URL and set it as
+#      RENDER_DEPLOY_HOOK_URL in your GitHub repo secrets (for CI triggers)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: megaplayer
+    runtime: python
+    region: oregon          # change to: frankfurt, singapore, ohio, virginia
+    plan: free              # free | starter | standard | pro
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --keep-alive 5
+
+    # Persistent disk so profile.json survives redeploys (paid plans only)
+    # If on free plan, rules reset on each deploy — use the GitHub Actions
+    # artifact approach below, or just rely on localStorage fallback in browser.
+    # disk:
+    #   name: megaplayer-data
+    #   mountPath: /opt/render/project/src
+    #   sizeGB: 1
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        value: 10000        # Render injects $PORT automatically; this is a hint
+
+    healthCheckPath: /health
+
+    autoDeploy: true        # redeploy automatically on every git push to main
