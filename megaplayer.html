@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MegaPlayer</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<style>
+:root {
+  --bg:#0d0d0f; --s1:#18181c; --s2:#1e1e24; --s3:#26262e;
+  --border:#2a2a35; --acc:#7c5cfc; --acc2:#a78bfa;
+  --text:#f0f0f5; --muted:#7777aa; --red:#ff5555; --green:#4ade80;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
+
+/* ── Header ── */
+header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; background: var(--s1);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.logo { font-size: 1.25rem; font-weight: 800; letter-spacing: -.5px; }
+.logo span { color: var(--acc2); }
+.badge {
+  font-size: .58rem; background: var(--acc); color: #fff;
+  padding: 2px 8px; border-radius: 20px; font-weight: 700; letter-spacing: 1px;
+}
+.hbadge { font-size: .62rem; color: var(--muted); margin-left: auto; }
+
+/* ── Main layout ── */
+.wrap { display: flex; flex-direction: column; flex: 1; }
+
+/* ── Video ── */
+.vwrap {
+  position: relative; background: #000; width: 100%;
+  aspect-ratio: 16/9; max-height: 70vh;
+}
+video { width: 100%; height: 100%; display: block; background: #000; }
+#iframeWrap {
+  display: none; position: absolute; inset: 0; background: #000;
+}
+#iframeWrap iframe {
+  width: 100%; height: 100%; border: none; display: block;
+}
+.iframe-badge {
+  position: absolute; top: 8px; left: 8px; z-index: 10;
+  background: rgba(124,92,252,.85); color: #fff;
+  font-size: .6rem; font-weight: 700; letter-spacing: .8px;
+  padding: 3px 9px; border-radius: 20px; pointer-events: none;
+}
+
+/* ── Controls overlay ── */
+.overlay {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.92));
+  padding: 36px 14px 10px;
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.vwrap:hover .overlay,
+.vwrap.paused .overlay { opacity: 1; pointer-events: all; }
+/* In iframe mode the overlay is fully suppressed */
+.vwrap.iframe-mode .overlay { display: none !important; }
+
+/* Seek */
+.seek {
+  position: relative; height: 4px; background: rgba(255,255,255,.2);
+  border-radius: 4px; cursor: pointer; margin-bottom: 10px;
+  transition: height .15s;
+}
+.seek:hover { height: 6px; }
+.seek-buf  { position: absolute; top:0; height:100%; background:rgba(255,255,255,.25); border-radius:4px; pointer-events:none; }
+.seek-prog { position: absolute; top:0; height:100%; background:var(--acc); border-radius:4px; pointer-events:none; }
+.seek-thumb {
+  position: absolute; top: 50%; width: 13px; height: 13px;
+  background: #fff; border-radius: 50%;
+  transform: translate(-50%,-50%); pointer-events: none;
+  opacity: 0; transition: opacity .15s;
+}
+.seek:hover .seek-thumb { opacity: 1; }
+.marker { position:absolute; top:0; height:100%; width:3px; border-radius:2px; pointer-events:none; }
+.marker.intro { background: var(--green); }
+.marker.outro { background: var(--red); }
+
+/* Control row */
+.crow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cb {
+  background: none; border: none; color: #fff; cursor: pointer;
+  font-size: .95rem; padding: 4px 6px; border-radius: 6px;
+  line-height: 1; transition: background .15s; white-space: nowrap;
+}
+.cb:hover { background: rgba(255,255,255,.15); }
+.time { font-size: .72rem; color: rgba(255,255,255,.85); white-space: nowrap; }
+.sp { flex: 1; }
+select.cs {
+  background: rgba(0,0,0,.7); border: 1px solid rgba(255,255,255,.2);
+  color: #fff; font-size: .68rem; padding: 3px 5px;
+  border-radius: 6px; cursor: pointer;
+}
+
+/* ── Panel ── */
+.panel {
+  background: var(--s2); border-top: 1px solid var(--border);
+  padding: 14px 16px; flex-shrink: 0;
+}
+.plabel {
+  font-size: .65rem; color: var(--muted); font-weight: 700;
+  letter-spacing: .5px; margin-bottom: 5px;
+}
+.row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+input.fi {
+  flex: 1; min-width: 0; background: var(--s1);
+  border: 1px solid var(--border); color: var(--text);
+  padding: 8px 11px; border-radius: 7px; font-size: .82rem;
+  outline: none; transition: border .15s; width: 100%;
+}
+input.fi:focus { border-color: var(--acc); }
+.btn {
+  background: var(--acc); border: none; color: #fff;
+  padding: 8px 16px; border-radius: 7px; cursor: pointer;
+  font-weight: 700; font-size: .82rem; white-space: nowrap;
+  transition: opacity .15s; flex-shrink: 0;
+}
+.btn:hover { opacity: .85; }
+.btn.sec {
+  background: var(--s1); border: 1px solid var(--border); color: var(--text);
+}
+.btn.sec:hover { border-color: var(--acc); color: var(--acc2); }
+
+/* Proxy row */
+.proxy-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+.proxy-row > div { flex: 1; min-width: 140px; }
+select.fi-sel {
+  width: 100%; background: var(--s1); border: 1px solid var(--border);
+  color: var(--text); padding: 8px 10px; border-radius: 7px;
+  font-size: .78rem; outline: none; cursor: pointer; transition: border .15s;
+}
+select.fi-sel:focus { border-color: var(--acc); }
+
+/* Custom proxy extra fields */
+#customExtra { display: none; }
+
+/* Status */
+.statusrow { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+.status { font-size: .74rem; color: var(--muted); flex: 1; min-height: 16px; }
+
+/* Saved rules */
+.rules-wrap {
+  margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;
+}
+.rules-title { font-size: .65rem; color: var(--muted); font-weight: 700; letter-spacing: .5px; margin-bottom: 6px; }
+#savedRules { max-height: 110px; overflow-y: auto; }
+.rule-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+}
+.rule-item:last-child { border-bottom: none; }
+.rule-info { flex: 1; min-width: 0; }
+.rule-host { font-size: .72rem; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-ref  { font-size: .62rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-del  {
+  background: none; border: 1px solid var(--border); color: var(--red);
+  padding: 2px 7px; border-radius: 4px; cursor: pointer; font-size: .62rem; flex-shrink: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Iframe sandbox toggle ── */
+.iopt {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .62rem; color: var(--muted); cursor: pointer;
+  padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--s1); transition: border .15s, color .15s, background .15s;
+  user-select: none; white-space: nowrap; margin-left: auto;
+}
+.iopt input[type=checkbox] { display: none; }
+.iopt:hover { border-color: var(--acc); color: var(--text); }
+.iopt.active {
+  border-color: var(--acc); color: var(--acc2); background: rgba(124,92,252,.13);
+}
+.iopt.active .iopt-dot { background: var(--acc2); }
+.iopt-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border); flex-shrink: 0; transition: background .15s;
+}
+.url-labelrow {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 5px; flex-wrap: wrap;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  header { padding: 8px 12px; }
+  .logo { font-size: 1.05rem; }
+  .hbadge { display: none; }
+  .panel { padding: 10px 12px; }
+  .crow { gap: 4px; }
+  .cb { font-size: .85rem; padding: 3px 5px; }
+  .time { font-size: .65rem; }
+  select.cs { font-size: .62rem; padding: 2px 4px; }
+  .proxy-row > div { min-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Mega<span>Player</span></div>
+  <div class="badge">HLS · MP4 · IFRAME</div>
+  <span class="hbadge">HLS · MP4 · IFrame · Proxy</span>
+</header>
+
+<div class="wrap">
+  <!-- Video -->
+  <div class="vwrap" id="vwrap">
+    <video id="vid" preload="metadata"></video>
+    <div id="iframeWrap">
+      <div class="iframe-badge">IFRAME</div>
+      <iframe id="iframePlayer" allowfullscreen allow="autoplay; fullscreen; encrypted-media; picture-in-picture" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"></iframe>
+    </div>
+    <div class="overlay">
+      <div class="seek" id="seek">
+        <div class="seek-buf"  id="sbuf"  style="width:0"></div>
+        <div class="seek-prog" id="sprog" style="width:0"></div>
+        <div class="seek-thumb" id="sthumb" style="left:0"></div>
+        <div class="marker intro" id="imark" style="display:none"></div>
+        <div class="marker outro" id="omark" style="display:none"></div>
+      </div>
+      <div class="crow">
+        <button class="cb" id="bplay">▶</button>
+        <button class="cb" id="bback" title="-10s">⏪</button>
+        <button class="cb" id="bfwd"  title="+10s">⏩</button>
+        <button class="cb" id="bmute">🔊</button>
+        <input type="range" id="vol" min="0" max="1" step="0.05" value="1"
+          style="width:60px;accent-color:var(--acc);cursor:pointer">
+        <span class="time" id="tdisp">0:00 / 0:00</span>
+        <div class="sp"></div>
+        <select class="cs" id="speed">
+          <option value=".5">.5x</option><option value=".75">.75x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.25">1.25x</option><option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+        <select class="cs" id="qual"><option value="-1">Auto</option></select>
+        <button class="cb" id="bpip" title="Picture-in-Picture">⧉</button>
+        <button class="cb" id="bfs"  title="Fullscreen">⛶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel -->
+  <div class="panel">
+
+    <!-- Stream URL -->
+    <div class="url-labelrow">
+      <div class="plabel" style="margin-bottom:0">STREAM URL</div>
+      <span id="urlTypeBadge" style="display:none;font-size:.6rem;font-weight:700;letter-spacing:.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);background:var(--s1);color:var(--muted)"></span>
+      <label class="iopt" id="optSandbox" title="Enable iframe sandbox — blocks ads, popups & redirects (may break some players)">
+        <input type="checkbox" id="chkSandbox" onchange="onSandboxChange()">
+        <span class="iopt-dot"></span>🛡 Sandbox
+      </label>
+    </div>
+    <div class="row">
+      <input class="fi" id="urlIn" type="text" placeholder="Paste m3u8, mp4, or any stream URL (others open in iframe)…">
+      <button class="btn" onclick="loadFromInput()">▶ Play</button>
+    </div>
+
+    <!-- Referer + Origin -->
+    <div class="row">
+      <div style="flex:1;min-width:140px">
+        <div class="plabel">REFERER</div>
+        <input class="fi" id="refIn" type="text" placeholder="https://megaplay.buzz/">
+      </div>
+      <div style="flex:1;min-width:140px">
+        <div class="plabel">ORIGIN</div>
+        <input class="fi" id="origIn" type="text" placeholder="https://megaplay.buzz">
+      </div>
+    </div>
+
+    <!-- Proxy mode -->
+    <div class="proxy-row">
+      <div>
+        <div class="plabel">PROXY MODE</div>
+        <select class="fi-sel" id="proxyMode" onchange="onProxyModeChange()">
+          <option value="local">🖥️ Local Proxy (Python server)</option>
+          <option value="custom">🌐 Custom Proxy (foxy-doxy / external)</option>
+          <option value="direct">⚡ Direct (no proxy)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Custom proxy extra fields -->
+    <div id="customExtra">
+      <div class="row">
+        <div style="flex:2;min-width:180px">
+          <div class="plabel">CUSTOM PROXY BASE URL</div>
+          <input class="fi" id="customProxyUrl" type="text"
+            value="https://foxy-doxy.andruilsyestems.workers.dev/proxy">
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div class="plabel">FORMAT</div>
+          <select class="fi-sel" id="proxyFormat">
+            <option value="foxy">foxy-doxy (?url=B64&headers=B64)</option>
+            <option value="plain">Plain (?url=ENC&referer=ENC)</option>
+            <option value="cors">CORS-anywhere (prepend)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status + Save rule -->
+    <div class="statusrow">
+      <div class="status" id="status">Ready — paste an m3u8 URL above</div>
+      <button class="btn sec" onclick="saveCurrentRule()"
+        style="font-size:.68rem;padding:5px 10px" title="Save Referer+Origin for this CDN">
+        💾 Save Rule
+      </button>
+    </div>
+
+    <!-- Saved rules -->
+    <div class="rules-wrap">
+      <div class="rules-title">SAVED RULES <span id="rulesCount" style="color:var(--acc2)"></span></div>
+      <div id="savedRules"></div>
+    </div>
+
+  </div><!-- end panel -->
+</div><!-- end wrap -->
+
+<script>
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const vid    = document.getElementById('vid');
+const vwrap  = document.getElementById('vwrap');
+const iframeWrap   = document.getElementById('iframeWrap');
+const iframePlayer = document.getElementById('iframePlayer');
+const seek   = document.getElementById('seek');
+const sbuf   = document.getElementById('sbuf');
+const sprog  = document.getElementById('sprog');
+const sthumb = document.getElementById('sthumb');
+const imark  = document.getElementById('imark');
+const omark  = document.getElementById('omark');
+const bplay  = document.getElementById('bplay');
+const bmute  = document.getElementById('bmute');
+const vol    = document.getElementById('vol');
+const tdisp  = document.getElementById('tdisp');
+const qual   = document.getElementById('qual');
+const speed  = document.getElementById('speed');
+const status = document.getElementById('status');
+
+let hls = null, scrub = false;
+
+// ════════════════════════════════════════════════════════════
+// SMART URL INTELLIGENCE — auto-detect Referer/Origin
+// ════════════════════════════════════════════════════════════
+const KNOWN_RULES = [
+  { cdn:['cdn.mewstream.buzz','mewstream.buzz','voltara.click','lostproject.club'],
+    ref:'https://megaplay.buzz/', origin:'https://megaplay.buzz', label:'MegaPlay' },
+  { cdn:['gogocdn.net','cdn.gogocdn.net','gogoanime'],
+    ref:'https://gogoanime.me.uk/', origin:'https://gogoanime.me.uk', label:'GogoAnime' },
+  { cdn:['megacloud.tv','rapid-cloud.co','megacloud.store'],
+    ref:'https://aniwatch.to/', origin:'https://aniwatch.to', label:'AniWatch/Zoro' },
+  { cdn:['9anime','vidstream','mcloud.to'],
+    ref:'https://9anime.to/', origin:'https://9anime.to', label:'9Anime' },
+  { cdn:['crunchyroll.com','vrv.co'],
+    ref:'https://www.crunchyroll.com/', origin:'https://www.crunchyroll.com', label:'Crunchyroll' },
+  { cdn:['video-edge','twitch.tv','twitchsvc.net'],
+    ref:'https://www.twitch.tv/', origin:'https://www.twitch.tv', label:'Twitch' },
+  { cdn:['dailymotion.com','dmcdn.net'],
+    ref:'https://www.dailymotion.com/', origin:'https://www.dailymotion.com', label:'Dailymotion' },
+  { cdn:['streamtape.com','streamtape.net'],
+    ref:'https://streamtape.com/', origin:'https://streamtape.com', label:'Streamtape' },
+  { cdn:['dood.','doodstream.com','ds2play.com'],
+    ref:'https://doodstream.com/', origin:'https://doodstream.com', label:'DoodStream' },
+  { cdn:['filemoon.sx','filemoon.in'],
+    ref:'https://filemoon.sx/', origin:'https://filemoon.sx', label:'FileMoon' },
+  { cdn:['vizcloud','vidcloud','mcloud'],
+    ref:'https://vidcloud.co/', origin:'https://vidcloud.co', label:'VidCloud' },
+];
+
+const LS_KEY = 'megaplayer_url_rules'; // kept only for one-time migration
+
+// ════════════════════════════════════════════════════════════
+// PROFILE.JSON  — server-side persistence
+// ════════════════════════════════════════════════════════════
+let _profileCache = null; // in-memory cache after first fetch
+
+async function loadUserRules() {
+  if (_profileCache) return _profileCache;
+  try {
+    const r = await fetch('/api/profiles');
+    if (r.ok) { _profileCache = await r.json(); return _profileCache; }
+  } catch {}
+  // Fallback: migrate from localStorage if server unavailable
+  try { return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); } catch { return {}; }
+}
+
+async function saveUserRule(host, ref, origin, proxyMode, proxyFmt, customUrl) {
+  const body = { host, ref, origin,
+    proxyMode: proxyMode||'', proxyFmt: proxyFmt||'', customUrl: customUrl||'' };
+  try {
+    const r = await fetch('/api/profiles', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (r.ok) {
+      _profileCache = null; // invalidate cache
+      const data = await loadUserRules();
+      renderSavedRules(data);
+      return;
+    }
+  } catch {}
+  // Fallback to localStorage
+  const data = await loadUserRules();
+  data[host] = { ref, origin, proxyMode:proxyMode||'', proxyFmt:proxyFmt||'', customUrl:customUrl||'', saved: new Date().toISOString() };
+  localStorage.setItem(LS_KEY, JSON.stringify(data));
+  _profileCache = data;
+  renderSavedRules(data);
+}
+
+async function deleteUserRule(host) {
+  try {
+    await fetch(`/api/profiles/${encodeURIComponent(host)}`, { method:'DELETE' });
+    _profileCache = null;
+  } catch {
+    const data = await loadUserRules();
+    delete data[host];
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    _profileCache = data;
+  }
+  const data = await loadUserRules();
+  renderSavedRules(data);
+}
+
+async function detectHeaders(url) {
+  if (!url) return null;
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return null; }
+  for (const rule of KNOWN_RULES)
+    if (rule.cdn.some(c => host.includes(c)))
+      return { ref: rule.ref, origin: rule.origin, label: rule.label, source: 'built-in',
+               proxyMode: '', proxyFmt: '', customUrl: '' };
+  const ur = await loadUserRules();
+  for (const [h, d] of Object.entries(ur))
+    if (host.includes(h))
+      return { ref: d.ref, origin: d.origin, label: h, source: 'saved',
+               proxyMode: d.proxyMode||'', proxyFmt: d.proxyFmt||'', customUrl: d.customUrl||'' };
+  try {
+    const u = new URL(url);
+    return { ref: u.origin+'/', origin: u.origin, label: host, source: 'auto',
+             proxyMode: '', proxyFmt: '', customUrl: '' };
+  } catch { return null; }
+}
+
+// ── URL type badge ────────────────────────────────────────────────────────
+const URL_TYPES = {
+  hls:    { label: '📡 HLS',    color: '#4ade80', border: '#4ade80' },
+  txt:    { label: '📡 HLS·TXT', color: '#4ade80', border: '#4ade80' },
+  mp4:    { label: '🎬 MP4',    color: '#60a5fa', border: '#60a5fa' },
+  webm:   { label: '🎬 WEBM',   color: '#60a5fa', border: '#60a5fa' },
+  ts:     { label: '🎬 TS',     color: '#60a5fa', border: '#60a5fa' },
+  iframe: { label: '🖼️ IFRAME', color: '#a78bfa', border: '#7c5cfc' },
+};
+
+function detectUrlType(url) {
+  if (!url) return null;
+  const u = url.split('?')[0].toLowerCase();
+  if (u.endsWith('.m3u8') || u.includes('.m3u8')) return 'hls';
+  if (u.endsWith('.txt'))  return 'txt';
+  if (u.endsWith('.mp4') || u.endsWith('.mov') || u.endsWith('.mkv') ||
+      u.endsWith('.avi') || u.endsWith('.flv') || u.endsWith('.ogg')) return 'mp4';
+  if (u.endsWith('.webm')) return 'webm';
+  if (u.endsWith('.ts'))   return 'ts';
+  return 'iframe';
+}
+
+function showUrlTypeBadge(url) {
+  const badge = document.getElementById('urlTypeBadge');
+  if (!url) { badge.style.display = 'none'; return; }
+  const type = detectUrlType(url);
+  const t = URL_TYPES[type];
+  badge.textContent = t.label;
+  badge.style.color  = t.color;
+  badge.style.borderColor = t.border;
+  badge.style.background = t.color + '18';
+  badge.style.display = 'inline-flex';
+}
+
+async function onUrlInput() {
+  const url = document.getElementById('urlIn').value.trim();
+  showUrlTypeBadge(url);
+  if (!url) return;
+  if (isDirectVideo(url)) {
+    setStatus('🎬 MP4/direct video detected — Referer/Origin optional', 'var(--acc2)');
+    return;
+  }
+  if (isIframeUrl(url)) {
+    setStatus('🖼️ Unknown format — will open in iframe automatically', 'var(--acc2)');
+    return;
+  }
+  // Apply saved rule if domain matches
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return; }
+  const ur = await loadUserRules();
+  for (const [h, d] of Object.entries(ur)) {
+    if (host.includes(h)) {
+      document.getElementById('refIn').value  = d.ref   || '';
+      document.getElementById('origIn').value = d.origin || '';
+      if (d.proxyMode) {
+        document.getElementById('proxyMode').value = d.proxyMode;
+        onProxyModeChange();
+      }
+      if (d.proxyFmt && document.getElementById('proxyFormat'))
+        document.getElementById('proxyFormat').value = d.proxyFmt;
+      if (d.customUrl && document.getElementById('customProxyUrl'))
+        document.getElementById('customProxyUrl').value = d.customUrl;
+      setStatus(`💾 Saved rule applied: ${h}`, 'var(--acc2)');
+      return;
+    }
+  }
+}
+
+async function saveCurrentRule() {
+  const url        = document.getElementById('urlIn').value.trim();
+  const ref        = document.getElementById('refIn').value.trim();
+  const orig       = document.getElementById('origIn').value.trim();
+  const proxyMode  = document.getElementById('proxyMode').value;
+  const proxyFmt   = document.getElementById('proxyFormat') ? document.getElementById('proxyFormat').value : 'foxy';
+  const customUrl  = document.getElementById('customProxyUrl') ? document.getElementById('customProxyUrl').value.trim() : '';
+
+  if (!url) { setStatus('❌ Paste a URL first', 'var(--red)'); return; }
+  let host = '';
+  try { host = new URL(url).hostname; } catch { setStatus('❌ Invalid URL', 'var(--red)'); return; }
+
+  // Save per-host rule to profile.json
+  await saveUserRule(host, ref || '', orig || '', proxyMode, proxyFmt, customUrl);
+
+  // Also persist proxy preference in localStorage as fallback
+  localStorage.setItem('megaplayer_proxy_mode', proxyMode);
+  localStorage.setItem('megaplayer_proxy_fmt',  proxyFmt);
+  localStorage.setItem('megaplayer_proxy_custom_url', customUrl);
+
+  const parts = [];
+  if (ref || orig) parts.push('headers');
+  parts.push(`proxy:${proxyMode}`);
+  setStatus(`💾 Saved to profile.json for ${host} (${parts.join(', ')})`, 'var(--green)');
+}
+
+async function renderSavedRules(data) {
+  if (!data) data = await loadUserRules();
+  const el = document.getElementById('savedRules');
+  const rc = document.getElementById('rulesCount');
+  const entries = Object.entries(data);
+  rc.textContent = entries.length ? `(${entries.length})` : '';
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.7rem;padding:3px 0">No saved rules yet — play a URL then click 💾 Save Rule</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([host, d]) => {
+    const proxyLabel = d.proxyMode ? `<span style="color:var(--acc2);margin-left:4px">[${d.proxyMode}]</span>` : '';
+    const refLabel   = d.ref ? d.ref : '<span style="color:var(--muted);font-style:italic">no referer</span>';
+    return `<div class="rule-item">
+      <div class="rule-info">
+        <div class="rule-host">${host}${proxyLabel}</div>
+        <div class="rule-ref">${refLabel}</div>
+      </div>
+      <button class="rule-del" onclick="deleteUserRule('${host}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════
+// PROXY BUILDER
+// ════════════════════════════════════════════════════════════
+function onProxyModeChange() {
+  const mode = document.getElementById('proxyMode').value;
+  document.getElementById('customExtra').style.display = mode==='custom' ? 'block' : 'none';
+}
+
+function buildSrc(m3u8, ref, orig) {
+  const mode = document.getElementById('proxyMode').value;
+  ref  = ref  || '';
+  orig = orig || '';
+  if (mode === 'local')
+    return `/proxy?url=${encodeURIComponent(m3u8)}&ref=${encodeURIComponent(ref)}&origin=${encodeURIComponent(orig)}`;
+  if (mode === 'custom') {
+    const base   = (document.getElementById('customProxyUrl').value||'').trim().replace(/\/$/,'');
+    const format = document.getElementById('proxyFormat').value;
+    if (format === 'foxy') {
+      const urlB64 = btoa(m3u8).replace(/\+/g,'%2B').replace(/=/g,'%3D');
+      const hdrs   = {...(ref&&{Referer:ref}), ...(orig&&{Origin:orig})};
+      const hdrB64 = btoa(JSON.stringify(hdrs)).replace(/\+/g,'%2B').replace(/=/g,'%3D');
+      return `${base}?url=${urlB64}&headers=${hdrB64}`;
+    }
+    if (format === 'plain') {
+      let q = `${base}?url=${encodeURIComponent(m3u8)}`;
+      if (ref)  q += `&referer=${encodeURIComponent(ref)}`;
+      if (orig) q += `&origin=${encodeURIComponent(orig)}`;
+      return q;
+    }
+    if (format === 'cors')
+      return `${base}/${m3u8}`;
+  }
+  return m3u8; // direct
+}
+
+// ════════════════════════════════════════════════════════════
+// STREAM LOADER
+// ════════════════════════════════════════════════════════════
+function loadFromInput() {
+  const url  = document.getElementById('urlIn').value.trim();
+  let ref    = document.getElementById('refIn').value.trim();
+  let orig   = document.getElementById('origIn').value.trim();
+  if (!url) { setStatus('❌ Paste a URL first', 'var(--red)'); return; }
+  showUrlTypeBadge(url);
+  loadStream(url, ref, orig);
+}
+
+function isHlsUrl(url) {
+  const u = url.split('?')[0].toLowerCase();
+  return u.endsWith('.m3u8') || u.includes('.m3u8') || u.endsWith('.txt');
+}
+
+function isDirectVideo(url) {
+  const u = url.split('?')[0].toLowerCase();
+  return /\.(mp4|webm|ogg|mov|mkv|avi|flv|ts)(\?|$)/.test(u) || /\.(mp4|webm|ogg|mov|mkv|avi|flv|ts)$/.test(u);
+}
+
+function isIframeUrl(url) {
+  // Anything that's not a known video file or m3u8 gets iframe treatment
+  return !isHlsUrl(url) && !isDirectVideo(url);
+}
+
+// ════════════════════════════════════════════════════════════
+// IFRAME OPTIONS  — Adblock / Redirect / Sandbox toggles
+// ════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════
+// SANDBOX TOGGLE  — single switch, off by default
+// When ON:  allow-scripts + allow-same-origin + allow-forms only.
+//           No allow-popups, no allow-top-navigation → blocks
+//           ads, popups, and page-redirect hijacks via sandbox.
+// When OFF: sandbox attribute removed, iframe runs unrestricted.
+// ════════════════════════════════════════════════════════════
+const SANDBOX_ATTR = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock';
+
+function onSandboxChange() {
+  const on = document.getElementById('chkSandbox').checked;
+  document.getElementById('optSandbox').classList.toggle('active', on);
+  localStorage.setItem('megaplayer_opt_sandbox', on ? '1' : '0');
+  if (vwrap.classList.contains('iframe-mode')) applyIframeOptions();
+}
+
+function applyIframeOptions() {
+  if (document.getElementById('chkSandbox').checked) {
+    iframePlayer.setAttribute('sandbox', SANDBOX_ATTR);
+  } else {
+    iframePlayer.removeAttribute('sandbox');
+  }
+}
+
+function showVideoMode() {
+  vid.style.display = 'block';
+  iframeWrap.style.display = 'none';
+  iframePlayer.src = 'about:blank';
+  iframePlayer.removeAttribute('sandbox');
+  vwrap.classList.remove('iframe-mode');
+}
+
+function showIframeMode(src) {
+  vid.style.display = 'none';
+  iframeWrap.style.display = 'block';
+  vwrap.classList.add('iframe-mode');
+  vid.pause();
+  vid.src = '';
+  applyIframeOptions();   // set/unset sandbox BEFORE src
+  iframePlayer.src = src;
+}
+
+function loadStream(streamUrl, ref, orig) {
+  if (hls) { hls.destroy(); hls = null; }
+  qual.innerHTML = '<option value="-1">Auto</option>';
+
+  const mode      = document.getElementById('proxyMode').value;
+  const modeLabel = mode==='local'?'local proxy':mode==='custom'?'custom proxy':'direct';
+  const src       = buildSrc(streamUrl, ref, orig);
+
+  // ── IFRAME — unknown / embed URL ────────────────────────────
+  if (isIframeUrl(streamUrl)) {
+    showIframeMode(streamUrl);
+    setStatus(`🖼️ Opening in iframe (unknown format)  |  ⚡ direct`, 'var(--acc2)');
+    return;
+  }
+
+  showVideoMode();
+  setStatus(`⏳ Connecting via ${modeLabel}…`, 'var(--acc2)');
+
+  // ── MP4 / direct video ────────────────────────────────────
+  if (isDirectVideo(streamUrl)) {
+    vid.src = src;
+    vid.load();
+    vid.play().catch(()=>{});
+    vid.onloadedmetadata = () =>
+      setStatus(`✅ Playing MP4  |  🔀 ${modeLabel}`, 'var(--green)');
+    vid.onerror = () =>
+      setStatus(`❌ Failed to load video — try a different proxy mode`, 'var(--red)');
+    return;
+  }
+
+  // ── HLS / m3u8 ────────────────────────────────────────────
+  if (Hls.isSupported()) {
+    hls = new Hls({ enableWorker:true, lowLatencyMode:false });
+    hls.loadSource(src);
+    hls.attachMedia(vid);
+    hls.on(Hls.Events.MANIFEST_PARSED, (_, d) => {
+      setStatus(`✅ Playing HLS — ${d.levels.length} quality level(s)  |  🔀 ${modeLabel}`, 'var(--green)');
+      d.levels.forEach((l, i) => {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = l.height ? l.height+'p' : `Level ${i}`;
+        qual.appendChild(o);
+      });
+      vid.play().catch(()=>{});
+    });
+    hls.on(Hls.Events.LEVEL_SWITCHED, (_, d) => {
+      const l = hls.levels[d.level];
+      if (l) setStatus(`📶 ${l.height?l.height+'p':'Auto'} — ${Math.round((l.bitrate||0)/1000)}kbps  |  🔀 ${modeLabel}`, 'var(--muted)');
+    });
+    hls.on(Hls.Events.ERROR, (_, d) => {
+      if (d.fatal) {
+        if (d.type===Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+        setStatus(`❌ ${d.details} — try a different proxy mode`, 'var(--red)');
+      }
+    });
+  } else if (vid.canPlayType('application/vnd.apple.mpegurl')) {
+    vid.src = src; vid.play().catch(()=>{});
+    setStatus('✅ Native HLS', 'var(--green)');
+  } else {
+    setStatus('❌ HLS not supported in this browser', 'var(--red)');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// VIDEO CONTROLS
+// ════════════════════════════════════════════════════════════
+bplay.onclick = () => vid.paused ? vid.play() : vid.pause();
+vid.onplay    = () => { bplay.textContent='⏸'; vwrap.classList.remove('paused'); };
+vid.onpause   = () => { bplay.textContent='▶'; vwrap.classList.add('paused'); };
+
+document.getElementById('bback').onclick = () => vid.currentTime = Math.max(0, vid.currentTime-10);
+document.getElementById('bfwd').onclick  = () => vid.currentTime += 10;
+bmute.onclick  = () => { vid.muted=!vid.muted; bmute.textContent=vid.muted?'🔇':'🔊'; };
+vol.oninput    = () => { vid.volume = vol.value; };
+speed.onchange = () => { vid.playbackRate = parseFloat(speed.value); };
+qual.onchange  = () => { if (hls) hls.currentLevel = parseInt(qual.value); };
+
+document.getElementById('bpip').onclick = () =>
+  document.pictureInPictureElement ? document.exitPictureInPicture() : vid.requestPictureInPicture().catch(()=>{});
+document.getElementById('bfs').onclick = () =>
+  document.fullscreenElement ? document.exitFullscreen() : vwrap.requestFullscreen().catch(()=>{});
+
+// Seek bar
+vid.ontimeupdate = () => {
+  if (!vid.duration || scrub) return;
+  const p = vid.currentTime / vid.duration;
+  sprog.style.width = (p*100)+'%';
+  sthumb.style.left  = (p*100)+'%';
+  tdisp.textContent  = fmt(vid.currentTime)+' / '+fmt(vid.duration);
+};
+vid.onprogress = () => {
+  if (vid.buffered.length && vid.duration)
+    sbuf.style.width = (vid.buffered.end(vid.buffered.length-1)/vid.duration*100)+'%';
+};
+function seekTo(e) {
+  const r = seek.getBoundingClientRect();
+  vid.currentTime = Math.max(0, Math.min(1,(e.clientX-r.left)/r.width)) * vid.duration;
+}
+seek.onmousedown = e => { scrub=true; seekTo(e); };
+document.onmousemove = e => { if (scrub) seekTo(e); };
+document.onmouseup   = () => { scrub=false; };
+
+// Touch seek support
+seek.addEventListener('touchstart', e => { scrub=true; seekTo(e.touches[0]); }, {passive:true});
+document.addEventListener('touchmove', e => { if (scrub) seekTo(e.touches[0]); }, {passive:true});
+document.addEventListener('touchend', () => { scrub=false; });
+
+// Keyboard shortcuts
+document.onkeydown = e => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.key===' '||e.key==='k') { e.preventDefault(); vid.paused?vid.play():vid.pause(); }
+  if (e.key==='ArrowRight') vid.currentTime += 10;
+  if (e.key==='ArrowLeft')  vid.currentTime = Math.max(0, vid.currentTime-10);
+  if (e.key==='ArrowUp')    { vid.volume=Math.min(1,vid.volume+.1); vol.value=vid.volume; }
+  if (e.key==='ArrowDown')  { vid.volume=Math.max(0,vid.volume-.1); vol.value=vid.volume; }
+  if (e.key==='m') { vid.muted=!vid.muted; bmute.textContent=vid.muted?'🔇':'🔊'; }
+  if (e.key==='f') document.getElementById('bfs').click();
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function fmt(s) {
+  if (!s||isNaN(s)) return '0:00';
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=Math.floor(s%60);
+  return h>0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+function setStatus(msg, color='var(--muted)') { status.textContent=msg; status.style.color=color; }
+
+// ── Init ──────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  // Restore last saved proxy preference
+  const savedMode = localStorage.getItem('megaplayer_proxy_mode');
+  const savedFmt  = localStorage.getItem('megaplayer_proxy_fmt');
+  const savedCUrl = localStorage.getItem('megaplayer_proxy_custom_url');
+  if (savedMode) {
+    document.getElementById('proxyMode').value = savedMode;
+    onProxyModeChange();
+  }
+  if (savedFmt && document.getElementById('proxyFormat'))
+    document.getElementById('proxyFormat').value = savedFmt;
+  if (savedCUrl && document.getElementById('customProxyUrl'))
+    document.getElementById('customProxyUrl').value = savedCUrl;
+
+  // Restore sandbox toggle (off by default)
+  const savedSandbox = localStorage.getItem('megaplayer_opt_sandbox');
+  const sbxOn = savedSandbox === '1';
+  document.getElementById('chkSandbox').checked = sbxOn;
+  document.getElementById('optSandbox').classList.toggle('active', sbxOn);
+
+  document.getElementById('urlIn').addEventListener('input', onUrlInput);
+  document.getElementById('urlIn').addEventListener('paste', () => setTimeout(onUrlInput, 50));
+  showVideoMode();
+  await renderSavedRules();
+  setStatus('Ready — paste an m3u8, mp4, or any stream URL above', 'var(--muted)');
+});
+</script>
+</body>
+</html>
